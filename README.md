@@ -66,7 +66,7 @@ Each file will contains several documents in this [document format](http://media
     optional arguments:
       -h, --help            show this help message and exit
       --processes PROCESSES
-                            Number of processes to use (default 1)
+                            Number of processes to use (default 3)
 
     Output:
       -o OUTPUT, --output OUTPUT
