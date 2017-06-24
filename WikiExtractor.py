@@ -190,6 +190,10 @@ options = SimpleNamespace(
     # FIXME: sharing this with a Manager slows down.
     templateCache = {},
     
+    # Categories filtering
+    categories_include = set(),
+    categories_exclude = set(),
+
     # Elements to ignore/discard
     
     ignored_tag_patterns = [],
@@ -214,7 +218,7 @@ filter_disambig_page_pattern = re.compile("{{disambig(uation)?(\|[^}]*)?}}")
 
 ##
 # page filtering logic -- remove templates, undesired xml namespaces, and disambiguation pages
-def keepPage(ns, page):
+def keepPage(ns, categories, page):
     if ns != '0':               # Aritcle
         return False
     # remove disambig pages if desired
@@ -222,6 +226,11 @@ def keepPage(ns, page):
         for line in page:
             if filter_disambig_page_pattern.match(line):
                 return False
+    catSet = set(categories)
+    if options.categories_include and len(options.categories_include & catSet) == 0:
+        return False
+    if options.categories_exclude and len(options.categories_exclude & catSet) > 0:
+        return False
     return True
 
 
@@ -2957,7 +2966,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     page_num = 0
     for page_data in pages_from(input):
         id, revid, title, ns, categories, page = page_data
-        if keepPage(ns, page):
+        if keepPage(ns, categories, page):
             # slow down
             delay = 0
             if spool_length.value > max_spool_length:
@@ -3135,6 +3144,8 @@ def main():
                         help="Include the document revision id (default=%(default)s)")
     groupP.add_argument("--categories", action="store_true", default=options.print_categories,
                         help="Include the document categories (default=%(default)s)")
+    groupP.add_argument("--categories_file",
+                        help="Categories file to use for filtering. Start line with '^' to exclude a category.")
     groupP.add_argument("--min_text_length", type=int, default=options.min_text_length,
                         help="Minimum expanded text length required to write document (default=%(default)s)")
     groupP.add_argument("--filter_disambig_pages", action="store_true", default=options.filter_disambig_pages,
@@ -3244,6 +3255,19 @@ def main():
         except:
             logging.error('Could not create: %s', output_path)
             return
+
+    if args.categories_file:
+        with open(args.categories_file) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                elif line.startswith('^'):
+                    options.categories_exclude.add(line.lstrip('^'))
+                else:
+                    options.categories_include.add(line)
+            logging.info("Including %d categories. Excluding %d categories."
+                         % (len(options.categories_include), len(options.categories_exclude)))
 
     process_dump(input_file, args.templates, output_path, file_size,
                  args.compress, args.processes)
