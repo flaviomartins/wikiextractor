@@ -176,6 +176,10 @@ options = SimpleNamespace(
     print_revision = False,
 
     ##
+    # Print the wikipedia article categories
+    print_categories = False,
+
+    ##
     # Minimum expanded text length required to print document
     min_text_length = 0,
     
@@ -522,7 +526,7 @@ class Extractor(object):
     """
     An extraction task on a article.
     """
-    def __init__(self, id, revid, title, lines):
+    def __init__(self, id, revid, title, categories, lines):
         """
         :param id: id of page.
         :param title: tutle of page.
@@ -531,6 +535,7 @@ class Extractor(object):
         self.id = id
         self.revid = revid
         self.title = title
+        self.categories = categories
         self.text = ''.join(lines)
         self.magicWords = MagicWords()
         self.frame = Frame()
@@ -554,6 +559,8 @@ class Extractor(object):
             }
             if options.print_revision:
                 json_data['revid'] = self.revid
+            if self.categories and options.print_categories:
+                json_data['categories'] = self.categories
             # We don't use json.dump(data, out) because we want to be
             # able to encode the string if the output is sys.stdout
             out_str = json.dumps(json_data, ensure_ascii=False)
@@ -563,9 +570,12 @@ class Extractor(object):
             out.write('\n')
         else:
             if options.print_revision:
-                header = '<doc id="%s" revid="%s" url="%s" title="%s">\n' % (self.id, self.revid, url, self.title)
+                header = '<doc id="%s" revid="%s" url="%s" title="%s"' % (self.id, self.revid, url, self.title)
             else:
-                header = '<doc id="%s" url="%s" title="%s">\n' % (self.id, url, self.title)
+                header = '<doc id="%s" url="%s" title="%s"' % (self.id, url, self.title)
+            if self.categories and options.print_categories:
+                header += ' categories="%s"' % ', '.join(self.categories)
+            header += '>\n'
             footer = "\n</doc>\n"
             if out == sys.stdout:   # option -a or -o -
                 header = header.encode('utf-8')
@@ -2717,6 +2727,7 @@ class OutputSplitter(object):
 tagRE = re.compile(r'(.*?)<(/?\w+)[^>]*?>(?:([^<]*)(<.*?>)?)?')
 #                    1     2               3      4
 keyRE = re.compile(r'key="(\d*)"')
+catRE = re.compile(r'^\s*\[\[Category:([^|]+).*\]\].*')  # capture the category name [[Category:Category name|Sortkey]]"
 
 def load_templates(file, output_file=None):
     """
@@ -2729,7 +2740,7 @@ def load_templates(file, output_file=None):
     if output_file:
         output = codecs.open(output_file, 'wb', 'utf-8')
     for page_count, page_data in enumerate(pages_from(file)):
-        id, revid, title, ns, page = page_data
+        id, revid, title, ns, categories, page = page_data
         if not output_file and (not options.templateNamespace or
                                 not options.moduleNamespace):  # do not know it yet
             # reconstruct templateNamespace and moduleNamespace from the first title
@@ -2766,10 +2777,11 @@ def load_templates(file, output_file=None):
 def pages_from(input):
     """
     Scans input extracting pages.
-    :return: (id, revid, title, namespace key, page), page is a list of lines.
+    :return: (id, revid, title, namespace key, categories, page), page is a list of lines.
     """
     # we collect individual lines, since str.join() is significantly faster
     # than concatenation
+    categories = []
     page = []
     id = None
     ns = '0'
@@ -2783,12 +2795,17 @@ def pages_from(input):
         if '<' not in line:  # faster than doing re.search()
             if inText:
                 page.append(line)
+                # extract categories
+                cm = catRE.search(line)
+                if cm:
+                    categories.append(cm.group(1))
             continue
         m = tagRE.search(line)
         if not m:
             continue
         tag = m.group(2)
         if tag == 'page':
+            categories = []
             page = []
             redirect = False
         elif tag == 'id' and not id:
@@ -2818,12 +2835,13 @@ def pages_from(input):
             page.append(line)
         elif tag == '/page':
             if id != last_id and not redirect:
-                yield (id, revid, title, ns, page)
+                yield (id, revid, title, ns, categories, page)
                 last_id = id
                 ns = '0'
             id = None
             revid = None
             title = None
+            categories = []
             page = []
 
 
@@ -2938,7 +2956,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     # Mapper process
     page_num = 0
     for page_data in pages_from(input):
-        id, revid, title, ns, page = page_data
+        id, revid, title, ns, categories, page = page_data
         if keepPage(ns, page):
             # slow down
             delay = 0
@@ -2949,7 +2967,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
                     delay += 10
             if delay:
                 logging.info('Delay %ds', delay)
-            job = (id, revid, title, page, page_num)
+            job = (id, revid, title, categories, page, page_num)
             jobs_queue.put(job) # goes to any available extract_process
             page_num += 1
         page = None             # free memory
@@ -2994,11 +3012,11 @@ def extract_process(opts, i, jobs_queue, output_queue):
     
     
     while True:
-        job = jobs_queue.get()  # job is (id, title, page, page_num)
+        job = jobs_queue.get()  # job is (id, revid, title, categories, page, page_num)
         if job:
-            id, revid, title, page, page_num = job
+            id, revid, title, categories, page, page_num = job
             try:
-                e = Extractor(*job[:4]) # (id, revid, title, page)
+                e = Extractor(*job[:5])  # (id, revid, title, categories, page)
                 page = None              # free memory
                 e.extract(out)
                 text = out.getvalue()
@@ -3115,6 +3133,8 @@ def main():
                         help="Do not expand templates")
     groupP.add_argument("-r", "--revision", action="store_true", default=options.print_revision,
                         help="Include the document revision id (default=%(default)s)")
+    groupP.add_argument("--categories", action="store_true", default=options.print_categories,
+                        help="Include the document categories (default=%(default)s)")
     groupP.add_argument("--min_text_length", type=int, default=options.min_text_length,
                         help="Minimum expanded text length required to write document (default=%(default)s)")
     groupP.add_argument("--filter_disambig_pages", action="store_true", default=options.filter_disambig_pages,
@@ -3148,6 +3168,7 @@ def main():
     options.toHTML = args.html
     options.write_json = args.json
     options.print_revision = args.revision
+    options.print_categories = args.categories
     options.min_text_length = args.min_text_length
     if args.html:
         options.keepLinks = True
@@ -3211,8 +3232,8 @@ def main():
 
         file = fileinput.FileInput(input_file, openhook=fileinput.hook_compressed)
         for page_data in pages_from(file):
-            id, revid, title, ns, page = page_data
-            Extractor(id, revid, title, page).extract(sys.stdout)
+            id, revid, title, ns, categories, page = page_data
+            Extractor(id, revid, title, categories, page).extract(sys.stdout)
         file.close()
         return
 
