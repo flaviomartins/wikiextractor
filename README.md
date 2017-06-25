@@ -35,7 +35,7 @@ Each file will contains several documents in this [document format](http://media
 
     usage: WikiExtractor.py [-h] [-o OUTPUT] [-b n[KMG]] [-c] [--json] [--html]
                             [-l] [-s] [--lists] [-ns ns1,ns2]
-                            [--templates TEMPLATES] [--no-templates] [-r]
+                            [--templates TEMPLATES] [--no-templates] [-r] [-t]
                             [--categories] [--min_text_length MIN_TEXT_LENGTH]
                             [--filter_disambig_pages] [-it abbr,b,big]
                             [-de gallery,timeline,noinclude] [--keep_tables]
@@ -88,6 +88,7 @@ Each file will contains several documents in this [document format](http://media
                             use or create file containing templates
       --no-templates        Do not expand templates
       -r, --revision        Include the document revision id (default=False)
+      -t, --timestamp       Include the document timestamp (default=False)
       --categories          Include the document categories (default=False)
       --min_text_length MIN_TEXT_LENGTH
                             Minimum expanded text length required to write
