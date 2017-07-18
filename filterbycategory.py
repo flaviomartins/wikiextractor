@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    categories_map = {}
-    counter = collections.Counter()
+    topics_for = {}
+    topics_counter = collections.Counter()
 
     matches = []
     for root, dirnames, filenames in os.walk(sys.argv[2]):
@@ -41,9 +41,9 @@ def main():
         try:
             for row in reader:
                 category_name = row[1].replace("Category:", "")
-                if category_name not in categories_map:
-                    categories_map[category_name] = []
-                categories_map[category_name].append(path.basename(filepath))
+                if category_name not in topics_for:
+                    topics_for[category_name] = []
+                topics_for[category_name].append(path.basename(filepath))
         except csv.Error as ce:
             logger.warning('DECODE FAIL: %s %s', filepath, ce.message)
             pass
@@ -55,21 +55,26 @@ def main():
     else:
         wfile = open(wfilepath, 'rb')
     for line in wfile:
-        data = json.loads(line)
-        if 'categories' not in data:
-            logger.warning('NO CATEGORIES FOR: %s', data['title'])
-            counter.update(["NO_CATEGORY"])
+        article = json.loads(line)
+        if 'categories' not in article:
+            logger.warning('NO CATEGORIES FOR: %s', article['title'])
+            topics_counter.update(["NO_CATEGORY"])
             continue
-        article_categories = data['categories']
-        for cat in article_categories:
+        categories = article['categories']
+        for cat in categories:
+            num_topics = 0
             try:
-                topical_categories = categories_map[cat]
-                counter.update(topical_categories)
-            except KeyError as ke:
-                logger.warning('COULD NOT FIND TOPICS FOR: %s', cat)
-                counter.update(["NO_TOPIC"])
+                topics = topics_for[cat]
+                topics_counter.update(topics)
+                num_topics += len(topics)
+            except KeyError:
+                pass
 
-    pprint.pprint(counter)
+        if num_topics == 0:
+            logger.debug('COULD NOT FIND TOPICS FOR: %s', cat)
+            topics_counter.update(["NO_TOPIC"])
+
+    pprint.pprint(topics_counter.most_common())
 
 
 if __name__ == '__main__':
