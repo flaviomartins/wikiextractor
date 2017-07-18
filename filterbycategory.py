@@ -57,7 +57,7 @@ def main():
     for line in wfile:
         article = json.loads(line)
         if 'categories' not in article:
-            logger.warning('NO CATEGORIES FOR: %s', article['title'])
+            logger.debug('NO CATEGORIES FOR: %s', article['title'])
             topics_counter.update(["NO_CATEGORY"])
             continue
         categories = article['categories']
